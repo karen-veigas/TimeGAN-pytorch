@@ -93,8 +93,8 @@ class BaseModel():
 
     # set mini-batch
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
-    self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
-
+   # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+    self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
     # train encoder & decoder
     self.optimize_params_er()
 
@@ -107,8 +107,8 @@ class BaseModel():
 
     # set mini-batch
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
-    self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
-
+   # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+    self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
     # train encoder & decoder
     self.optimize_params_er_()
  
@@ -121,7 +121,8 @@ class BaseModel():
 
     # set mini-batch
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
-    self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+   # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+    self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
     
     # train superviser
     self.optimize_params_s()
@@ -137,7 +138,8 @@ class BaseModel():
 
     # set mini-batch
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
-    self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+   # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+    self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
     self.Z = random_generator(self.opt.batch_size, self.opt.z_dim, self.T, self.max_seq_len)
 
     # train superviser
@@ -154,7 +156,8 @@ class BaseModel():
 
     # set mini-batch
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
-    self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+   # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
+    self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
     self.Z = random_generator(self.opt.batch_size, self.opt.z_dim, self.T, self.max_seq_len)
 
     # train superviser
@@ -228,7 +231,7 @@ class BaseModel():
       return None, None
     ## Synthetic data generation
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
-    self.Z = random_generator(num_samples, self.opt.z_dim, self.T, self.max_seq_len, mean, std)
+    self.Z = random_generator(num_samples, self.opt.z_dim, self.T, self.max_seq_len)
     self.Z = torch.tensor(self.Z, dtype=torch.float32).to(self.device)
     self.E_hat = self.netg(self.Z)    # [?, 24, 24]
     self.H_hat = self.nets(self.E_hat)  # [?, 24, 24]
