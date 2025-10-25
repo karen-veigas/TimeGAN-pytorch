@@ -29,6 +29,12 @@ from .model import Encoder, Recovery, Generator, Discriminator, Supervisor
 class BaseModel():
   """ Base Model for timegan
   """
+  loss_history = {
+        "er": [],  # Reconstruction loss (Encoder/Recovery)
+        "s": [],   # Supervision loss (Supervisor)
+        "g": [],   # Generator loss
+        "d": []    # Discriminator loss
+    }
 
   def __init__(self, opt, ori_data):
     # Seed for deterministic behavior
@@ -352,6 +358,7 @@ class TimeGAN(BaseModel):
       """
       self.err_er = self.l_mse(self.X_tilde, self.X)
       self.err_er.backward(retain_graph=True)
+      BaseModel.loss_history["er"].append(self.err_er.item())
       print("Loss: ", self.err_er)
 
     def backward_er_(self):
@@ -361,6 +368,8 @@ class TimeGAN(BaseModel):
       self.err_s = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
       self.err_er = 10 * torch.sqrt(self.err_er_) + 0.1 * self.err_s
       self.err_er.backward(retain_graph=True)
+      BaseModel.loss_history["er"].append(self.err_er.item())
+
 
     #  print("Loss: ", self.err_er_, self.err_s)
     def backward_g(self):
@@ -378,6 +387,7 @@ class TimeGAN(BaseModel):
                    self.err_g_V2 * self.opt.w_g + \
                    torch.sqrt(self.err_s) 
       self.err_g.backward(retain_graph=True)
+      BaseModel.loss_history["g"].append(self.err_g.item())
       print("Loss G: ", self.err_g)
 
     def backward_s(self):
@@ -385,6 +395,8 @@ class TimeGAN(BaseModel):
       """
       self.err_s = self.l_mse(self.H[:,1:,:], self.H_supervise[:,:-1,:])
       self.err_s.backward(retain_graph=True)
+      BaseModel.loss_history["s"].append(self.err_s.item())
+
       print("Loss S: ", self.err_s)
    #   print(torch.autograd.grad(self.err_s, self.nets.parameters()))
 
@@ -397,8 +409,10 @@ class TimeGAN(BaseModel):
       self.err_d = self.err_d_real + \
                    self.err_d_fake + \
                    self.err_d_fake_e * self.opt.w_gamma
-      if self.err_d > 0.15:
-        self.err_d.backward(retain_graph=True)
+      # if self.err_d > 0.15:
+      self.err_d.backward(retain_graph=True)
+      BaseModel.loss_history["d"].append(self.err_d.item())
+        
 
      # print("Loss D: ", self.err_d)
 
