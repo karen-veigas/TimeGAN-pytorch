@@ -273,7 +273,7 @@ class BaseModel():
     print(metric_results)
 """
 
-  def generation(self, num_samples, mean = 0.0, std = 1.0):
+  def generation_old(self, num_samples, mean = 0.0, std = 1.0):
     if num_samples == 0:
       return None, None
     ## Synthetic data generation
@@ -293,6 +293,25 @@ class BaseModel():
     generated_data = generated_data * self.max_val
     generated_data = generated_data + self.min_val
     return generated_data
+  
+  def generation(self, num_samples, mean=0.0, std=1.0):
+    if num_samples <= 0:
+        return None
+    
+    T = np.array([self.max_seq_len] * num_samples)  
+    self.Z = random_generator(num_samples, self.opt.z_dim, T, self.max_seq_len)
+    self.Z = torch.tensor(self.Z, dtype=torch.float32).to(self.device)
+    
+    with torch.no_grad():
+        E_hat = self.netg(self.Z)
+        H_hat = self.nets(E_hat)
+        generated_scaled = self.netr(H_hat).cpu().numpy()
+
+    generated_scaled = generated_scaled[:, :self.max_seq_len, :]
+    generated_unscaled = generated_scaled * (self.max_val - self.min_val + 1e-12) + self.min_val
+
+    return generated_unscaled.astype(np.float32)
+
 
 
 
