@@ -190,12 +190,19 @@ class BaseModel():
       print('Superviser training step: '+ str(iter) + '/' + str(self.opt.iteration))
 
     for iter in range(self.opt.iteration):
-      # Train for one iter
-      for kk in range(2):
-        self.train_one_iter_g()
-        self.train_one_iter_er_()
-
+      # # Train for one iter
+      # for kk in range(2):
+      #   self.train_one_iter_g()
+      #   self.train_one_iter_er_()
+      self.train_one_iter_g()
       self.train_one_iter_d()
+      
+      # Early Stopping
+      if len(BaseModel.loss_history["d"]) > 50:
+        recent_d = np.mean(BaseModel.loss_history["d"][-50:])
+        if recent_d < 0.01:
+            print("⚠ Early stopping: Discriminator collapsed")
+            break
 
       print('Superviser training step: '+ str(iter) + '/' + str(self.opt.iteration))
 
@@ -325,7 +332,7 @@ class TimeGAN(BaseModel):
       # loss
       self.l_mse = nn.MSELoss()
       self.l_r = nn.L1Loss()
-      self.l_bce = nn.BCELoss()
+      # self.l_bce = nn.BCELoss()
 
       # Setup optimizer
       if self.opt.isTrain:
@@ -337,9 +344,12 @@ class TimeGAN(BaseModel):
         self.optimizer_e = optim.Adam(self.nete.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
         self.optimizer_r = optim.Adam(self.netr.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
         self.optimizer_g = optim.Adam(self.netg.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
-        self.optimizer_d = optim.Adam(self.netd.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
+        # self.optimizer_d = optim.Adam(self.netd.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
+        self.optimizer_d = optim.Adam(self.netd.parameters(),lr=self.opt.lr * 0.2, betas=(self.opt.beta1, 0.999))
         self.optimizer_s = optim.Adam(self.nets.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
 
+    def wasserstein_loss(self, y_pred, y_true):
+        return torch.mean(y_true * y_pred)
 
     def forward_e(self):
       """ Forward propagate through netE
@@ -437,15 +447,30 @@ class TimeGAN(BaseModel):
     def backward_d(self):
       """ Backpropagate through netD
       """
-      self.err_d_real = self.l_bce(self.Y_real, torch.ones_like(self.Y_real))
-      self.err_d_fake = self.l_bce(self.Y_fake, torch.zeros_like(self.Y_fake))
-      self.err_d_fake_e = self.l_bce(self.Y_fake_e, torch.zeros_like(self.Y_fake_e))
-      self.err_d = self.err_d_real + \
-                   self.err_d_fake + \
-                   self.err_d_fake_e * self.opt.w_gamma
-      # if self.err_d > 0.15:
+      # self.err_d_real = self.l_bce(self.Y_real, torch.ones_like(self.Y_real))
+      # self.err_d_fake = self.l_bce(self.Y_fake, torch.zeros_like(self.Y_fake))
+      # self.err_d_fake_e = self.l_bce(self.Y_fake_e, torch.zeros_like(self.Y_fake_e))
+      # self.err_d = self.err_d_real + \
+      #              self.err_d_fake + \
+      #              self.err_d_fake_e * self.opt.w_gamma
+      # # if self.err_d > 0.15:
+      # self.err_d.backward(retain_graph=True)
+      # BaseModel.loss_history["d"].append(self.err_d.item())
+      
+      # Wasserstein Discriminator Loss
+      self.err_d_real = -self.wasserstein_loss(self.Y_real, torch.ones_like(self.Y_real))
+      self.err_d_fake =  self.wasserstein_loss(self.Y_fake, torch.ones_like(self.Y_fake))
+      self.err_d_fake_e = self.wasserstein_loss(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
+
+      self.err_d = self.err_d_real + self.err_d_fake + self.err_d_fake_e * self.opt.w_gamma
       self.err_d.backward(retain_graph=True)
+
+      # ✅ Weight clipping for critic stability
+      for p in self.netd.parameters():
+          p.data.clamp_(-0.01, 0.01)
+
       BaseModel.loss_history["d"].append(self.err_d.item())
+
         
 
      # print("Loss D: ", self.err_d)
