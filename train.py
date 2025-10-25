@@ -34,9 +34,6 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 from options import Options
 from lib.data import load_data
 from lib.timegan import TimeGAN
-from lib.timegan import BaseModel
-import matplotlib.pyplot as plt
-import numpy as np
 
 
 def train():
@@ -55,37 +52,6 @@ def train():
     # TRAIN MODEL
     model.train()
     
-    plot_losses(BaseModel.loss_history)
-    
-def smooth(values, alpha=0.95):
-    """ Exponential smoothing to reduce noise """
-    smoothed = []
-    v = 0
-    for x in values:
-        v = alpha * v + (1 - alpha) * x
-        smoothed.append(v)
-    return smoothed
-
-
-def plot_losses(loss_history, smooth_curves=True):
-    plt.figure(figsize=(14, 6))
-
-    for key, values in loss_history.items():
-        if len(values) == 0:
-            continue  # skip empty series
-
-        if smooth_curves:
-            plt.plot(smooth(values), label=f"{key.upper()} (smoothed)", alpha=0.9)
-        else:
-            plt.plot(values, label=key.upper(), alpha=0.7)
-
-    plt.title("✅ TimeGAN Training Losses", fontsize=16)
-    plt.xlabel("Training steps", fontsize=12)
-    plt.ylabel("Loss value", fontsize=12)
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
 
 if __name__ == '__main__':
     train()
