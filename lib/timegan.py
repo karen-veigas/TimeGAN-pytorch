@@ -215,7 +215,7 @@ class BaseModel():
           smoothed.append(v)
       return smoothed
 
-
+  @staticmethod
   def plot_losses(loss_history, smooth_curves=True):
       plt.figure(figsize=(14, 6))
 
