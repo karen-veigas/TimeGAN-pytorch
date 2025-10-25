@@ -419,9 +419,12 @@ class TimeGAN(BaseModel):
     def backward_g(self):
       """ Backpropagate through netG
       """
-      self.err_g_U = self.l_bce(self.Y_fake, torch.ones_like(self.Y_fake))
+      # self.err_g_U = self.l_bce(self.Y_fake, torch.ones_like(self.Y_fake))
 
-      self.err_g_U_e = self.l_bce(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
+      # self.err_g_U_e = self.l_bce(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
+      # Wasserstien Loss
+      self.err_g_U  = -torch.mean(self.Y_fake)
+      self.err_g_U_e = -torch.mean(self.Y_fake_e) 
       self.err_g_V1 = torch.mean(torch.abs(torch.sqrt(torch.std(self.X_hat,[0])[1] + 1e-6) - torch.sqrt(torch.std(self.X,[0])[1] + 1e-6)))   # |a^2 - b^2|
       self.err_g_V2 = torch.mean(torch.abs((torch.mean(self.X_hat,[0])[0]) - (torch.mean(self.X,[0])[0])))  # |a - b|
       self.err_s = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
