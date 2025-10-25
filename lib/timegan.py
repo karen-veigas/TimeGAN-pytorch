@@ -105,8 +105,11 @@ class BaseModel():
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
 
-    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
-    self.C = torch.tensor(cond, device=self.device)
+    # cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    # self.C = torch.tensor(cond, device=self.device)
+        
+    B, T = self.X.shape[0], self.X.shape[1]
+    self.C = self.C_raw.unsqueeze(1).repeat(1, T, 1).to(self.device)
 
     # train encoder & decoder
     self.optimize_params_er()
@@ -124,8 +127,12 @@ class BaseModel():
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
 
     # Simple placeholder condition for now (expand later)
-    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
-    self.C = torch.tensor(cond, device=self.device)
+    # cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    # self.C = torch.tensor(cond, device=self.device)
+    
+        
+    B, T = self.X.shape[0], self.X.shape[1]
+    self.C = self.C_raw.unsqueeze(1).repeat(1, T, 1).to(self.device)
 
     # train encoder & decoder
     self.optimize_params_er_()
@@ -143,8 +150,12 @@ class BaseModel():
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
 
     # Simple placeholder condition for now (expand later)
-    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
-    self.C = torch.tensor(cond, device=self.device)
+    # cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    # self.C = torch.tensor(cond, device=self.device)
+    
+        
+    B, T = self.X.shape[0], self.X.shape[1]
+    self.C = self.C_raw.unsqueeze(1).repeat(1, T, 1).to(self.device)
 
     
     # train superviser
@@ -164,9 +175,13 @@ class BaseModel():
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
 
-    # Simple placeholder condition for now (expand later)
-    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
-    self.C = torch.tensor(cond, device=self.device)
+    # # Simple placeholder condition for now (expand later)
+    # cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    # self.C = torch.tensor(cond, device=self.device)
+    
+        
+    B, T = self.X.shape[0], self.X.shape[1]
+    self.C = self.C_raw.unsqueeze(1).repeat(1, T, 1).to(self.device)
 
     self.Z = random_generator(self.opt.batch_size, self.opt.z_dim, self.T, self.max_seq_len)
 
@@ -187,10 +202,13 @@ class BaseModel():
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
 
-    # Simple placeholder condition for now (expand later)
-    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
-    self.C = torch.tensor(cond, device=self.device)
+    # # Simple placeholder condition for now (expand later)
+    # cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    # self.C = torch.tensor(cond, device=self.device)
 
+    B, T = self.X.shape[0], self.X.shape[1]
+    self.C = self.C_raw.unsqueeze(1).repeat(1, T, 1).to(self.device)
+    
     self.Z = random_generator(self.opt.batch_size, self.opt.z_dim, self.T, self.max_seq_len)
 
     # train superviser
@@ -433,8 +451,9 @@ class TimeGAN(BaseModel):
       self.E_hat = self.netg(self.Z)
     def forward_dg(self):
       """ Forward propagate through netD
-      """
-      self.Y_fake = self.netd(self.H_hat)
+        """
+      H_hatc = torch.cat([self.H_hat, self.C], dim=-1)
+      self.Y_fake = self.netd(H_hatc)
       self.Y_fake_e = self.netd(self.E_hat)
 
     def forward_rg(self):
@@ -456,8 +475,12 @@ class TimeGAN(BaseModel):
     def forward_d(self):
       """ Forward propagate through netD
       """
-      self.Y_real = self.netd(self.H)
-      self.Y_fake = self.netd(self.H_hat)
+      
+      Hc = torch.cat([self.H, self.C], dim=-1)
+      H_hatc = torch.cat([self.H_hat, self.C], dim=-1)
+
+      self.Y_real = self.netd(Hc)
+      self.Y_fake = self.netd(H_hatc)
       self.Y_fake_e = self.netd(self.E_hat)
 
 
