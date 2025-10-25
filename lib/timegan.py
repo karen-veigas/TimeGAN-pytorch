@@ -205,7 +205,7 @@ class BaseModel():
     self.plot_losses(BaseModel.loss_history)
 
   #  self.evaluation()
-
+  @staticmethod
   def smooth(values, alpha=0.95):
       """ Exponential smoothing to reduce noise """
       smoothed = []
@@ -224,7 +224,7 @@ class BaseModel():
               continue  # skip empty series
 
           if smooth_curves:
-              plt.plot(smooth(values), label=f"{key.upper()} (smoothed)", alpha=0.9)
+              plt.plot(BaseModel.smooth(values), label=f"{key.upper()} (smoothed)", alpha=0.9)
           else:
               plt.plot(values, label=key.upper(), alpha=0.7)
 
