@@ -104,6 +104,10 @@ class BaseModel():
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
+
+    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    self.C = torch.tensor(cond, device=self.device)
+
     # train encoder & decoder
     self.optimize_params_er()
 
@@ -118,6 +122,11 @@ class BaseModel():
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
+
+    # Simple placeholder condition for now (expand later)
+    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    self.C = torch.tensor(cond, device=self.device)
+
     # train encoder & decoder
     self.optimize_params_er_()
  
@@ -132,6 +141,11 @@ class BaseModel():
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
+
+    # Simple placeholder condition for now (expand later)
+    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    self.C = torch.tensor(cond, device=self.device)
+
     
     # train superviser
     self.optimize_params_s()
@@ -149,6 +163,11 @@ class BaseModel():
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
+
+    # Simple placeholder condition for now (expand later)
+    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    self.C = torch.tensor(cond, device=self.device)
+
     self.Z = random_generator(self.opt.batch_size, self.opt.z_dim, self.T, self.max_seq_len)
 
     # train superviser
@@ -167,6 +186,11 @@ class BaseModel():
     self.X0, self.T = batch_generator(self.ori_data, self.ori_time, self.opt.batch_size)
    # self.X = torch.tensor(self.X0, dtype=torch.float32).to(self.device)
     self.X = torch.from_numpy(np.asarray(self.X0, dtype=np.float32)).to(self.device)
+
+    # Simple placeholder condition for now (expand later)
+    cond = np.ones((self.X.shape[0], self.X.shape[1], self.opt.cond_dim), dtype=np.float32)
+    self.C = torch.tensor(cond, device=self.device)
+
     self.Z = random_generator(self.opt.batch_size, self.opt.z_dim, self.T, self.max_seq_len)
 
     # train superviser
@@ -190,8 +214,7 @@ class BaseModel():
       print('Superviser training step: '+ str(iter) + '/' + str(self.opt.iteration))
 
     for iter in range(self.opt.iteration):
-      for iter in range(self.opt.iteration):
-        for _ in range(self.opt.n_critic):
+      for _ in range(self.opt.n_critic):
           self.train_one_iter_d()      # critic with GP
       self.train_one_iter_g()          # generator (includes supervisor forward)
       self.train_one_iter_er_()        # small reconstruction refresh
@@ -393,12 +416,14 @@ class TimeGAN(BaseModel):
     def forward_e(self):
       """ Forward propagate through netE
       """
-      self.H = self.nete(self.X)
+      Xc = torch.cat([self.X, self.C], dim=-1)
+      self.H = self.nete(Xc)
 
     def forward_er(self):
       """ Forward propagate through netR
       """
-      self.H = self.nete(self.X)
+      Xc = torch.cat([self.X, self.C], dim=-1)
+      self.H = self.nete(Xc)
       self.X_tilde = self.netr(self.H)
 
     def forward_g(self):
