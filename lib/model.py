@@ -58,7 +58,7 @@ class Encoder(nn.Module):
     def __init__(self, opt):
         super(Encoder, self).__init__()
         # self.rnn = nn.GRU(input_size=opt.z_dim, hidden_size=opt.hidden_dim, num_layers=opt.num_layer)
-        self.rnn = nn.GRU(input_size=opt.feature_dim, hidden_size=opt.hidden_dim, num_layers=opt.num_layer)
+        self.rnn = nn.GRU(input_size=opt.feature_dim + opt.cond_dim, hidden_size=opt.hidden_dim, num_layers=opt.num_layer)
        # self.norm = nn.BatchNorm1d(opt.hidden_dim)
         self.fc = nn.Linear(opt.hidden_dim, opt.hidden_dim)
         self.sigmoid = nn.Sigmoid()
@@ -165,7 +165,7 @@ class Discriminator(nn.Module):
     """
     def __init__(self, opt):
         super(Discriminator, self).__init__()
-        self.rnn = nn.GRU(input_size=opt.hidden_dim, hidden_size=opt.hidden_dim, num_layers=opt.num_layer)
+        self.rnn = nn.GRU(input_size=opt.hidden_dim + opt.cond_dim, hidden_size=opt.hidden_dim, num_layers=opt.num_layer)
       #  self.norm = nn.LayerNorm(opt.hidden_dim)
         self.fc = nn.Linear(opt.hidden_dim, opt.hidden_dim)
         self.sigmoid = nn.Sigmoid()

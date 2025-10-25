@@ -190,12 +190,11 @@ class BaseModel():
       print('Superviser training step: '+ str(iter) + '/' + str(self.opt.iteration))
 
     for iter in range(self.opt.iteration):
-      # # Train for one iter
-      # for kk in range(2):
-      #   self.train_one_iter_g()
-      #   self.train_one_iter_er_()
-      self.train_one_iter_g()
-      self.train_one_iter_d()
+      for iter in range(self.opt.iteration):
+        for _ in range(self.opt.n_critic):
+          self.train_one_iter_d()      # critic with GP
+      self.train_one_iter_g()          # generator (includes supervisor forward)
+      self.train_one_iter_er_()        # small reconstruction refresh
       
       # Early Stopping
       if len(BaseModel.loss_history["d"]) > 50:
@@ -294,23 +293,29 @@ class BaseModel():
     generated_data = generated_data + self.min_val
     return generated_data
   
-  def generation(self, num_samples, mean=0.0, std=1.0):
-    if num_samples <= 0:
-        return None
-    
-    T = np.array([self.max_seq_len] * num_samples)  
-    self.Z = random_generator(num_samples, self.opt.z_dim, T, self.max_seq_len)
-    self.Z = torch.tensor(self.Z, dtype=torch.float32).to(self.device)
-    
-    with torch.no_grad():
-        E_hat = self.netg(self.Z)
-        H_hat = self.nets(E_hat)
-        generated_scaled = self.netr(H_hat).cpu().numpy()
+  def generation(self, num_samples, regime=0):
+      # Z as before
+      T = np.array([self.max_seq_len]*num_samples)
+      Z = random_generator(num_samples, self.opt.z_dim, T, self.max_seq_len)
+      Z = torch.tensor(Z, dtype=torch.float32, device=self.device)
 
-    generated_scaled = generated_scaled[:, :self.max_seq_len, :]
-    generated_unscaled = generated_scaled * (self.max_val - self.min_val + 1e-12) + self.min_val
+      # Build condition sequence
+      cond = np.eye(self.opt.cond_dim, dtype=np.float32)[regime]  # regime int or array
+      if isinstance(regime, (int, np.integer)):
+          C = np.repeat(cond[None,None,:], num_samples*self.max_seq_len, axis=0)
+      else:
+          # per-sample regimes
+          C = np.eye(self.opt.cond_dim, dtype=np.float32)[np.array(regime)]
+          C = np.repeat(C[:,None,:], self.max_seq_len, axis=1)
+      C = torch.tensor(C, dtype=torch.float32, device=self.device)
 
-    return generated_unscaled.astype(np.float32)
+      with torch.no_grad():
+          E_hat = self.netg(Z)
+          H_hat = self.nets(E_hat)
+          X_hat = self.netr(H_hat).cpu().numpy()
+
+      return X_hat.astype(np.float32)  # still in [0,1] if you trained on scaled windows
+
 
 
 
@@ -369,6 +374,21 @@ class TimeGAN(BaseModel):
 
     def wasserstein_loss(self, y_pred, y_true):
         return torch.mean(y_true * y_pred)
+    
+    
+    def grad_penalty(self, real, fake, cond):
+        # real,fake: [B,T,Hdim] ; cond: [B,T,cond_dim]
+        alpha = torch.rand(real.size(0), 1, 1, device=real.device)
+        inter = (alpha * real + (1 - alpha) * fake).requires_grad_(True)
+
+        inter_c = torch.cat([inter, cond], dim=-1)
+        out = self.netd(inter_c)
+
+        grad = torch.autograd.grad(outputs=out,inputs=inter,grad_outputs=torch.ones_like(out),create_graph=True,retain_graph=True,only_inputs=True)[0]
+
+        gp = ((grad.view(grad.size(0), -1).norm(2, dim=1) - 1.0)**2).mean()
+        return gp
+
 
     def forward_e(self):
       """ Forward propagate through netE
@@ -434,27 +454,28 @@ class TimeGAN(BaseModel):
       BaseModel.loss_history["er"].append(self.err_er.item())
 
 
-    #  print("Loss: ", self.err_er_, self.err_s)
     def backward_g(self):
-      """ Backpropagate through netG
-      """
-      # self.err_g_U = self.l_bce(self.Y_fake, torch.ones_like(self.Y_fake))
+        # ==========================
+        #   WGAN Generator Loss
+        # ==========================
 
-      # self.err_g_U_e = self.l_bce(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
-      # Wasserstien Loss
-      self.err_g_U  = -torch.mean(self.Y_fake)
-      self.err_g_U_e = -torch.mean(self.Y_fake_e) 
-      self.err_g_V1 = torch.mean(torch.abs(torch.sqrt(torch.std(self.X_hat,[0])[1] + 1e-6) - torch.sqrt(torch.std(self.X,[0])[1] + 1e-6)))   # |a^2 - b^2|
-      self.err_g_V2 = torch.mean(torch.abs((torch.mean(self.X_hat,[0])[0]) - (torch.mean(self.X,[0])[0])))  # |a - b|
-      self.err_s = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
-      self.err_g = self.err_g_U + \
-                   self.err_g_U_e * self.opt.w_gamma + \
-                   self.err_g_V1 * self.opt.w_g + \
-                   self.err_g_V2 * self.opt.w_g + \
-                   torch.sqrt(self.err_s) 
-      self.err_g.backward(retain_graph=True)
-      BaseModel.loss_history["g"].append(self.err_g.item())
-      print("Loss G: ", self.err_g)
+        # Conditioned fake latent
+        H_fake_c = torch.cat([self.H_hat, self.C], dim=-1)
+        G_adv = -self.netd(H_fake_c).mean()   # minimize -D(fake)
+
+        # Moment matching losses (unchanged from your version)
+        V1 = torch.mean(torch.abs(torch.sqrt(torch.var(self.X_hat,[0])[1] + 1e-6)
+                                - torch.sqrt(torch.var(self.X,[0])[1] + 1e-6)))
+        V2 = torch.mean(torch.abs(torch.mean(self.X_hat,[0])[0]
+                                - torch.mean(self.X,[0])[0]))
+        S_loss = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
+
+        self.err_g = G_adv + self.opt.w_g * (V1 + V2) + torch.sqrt(S_loss)
+        self.err_g.backward(retain_graph=True)
+
+        BaseModel.loss_history["g"].append(self.err_g.item())
+        print("Loss G: ", self.err_g)
+
 
     def backward_s(self):
       """ Backpropagate through netS
@@ -467,31 +488,31 @@ class TimeGAN(BaseModel):
    #   print(torch.autograd.grad(self.err_s, self.nets.parameters()))
 
     def backward_d(self):
-      """ Backpropagate through netD
-      """
-      # self.err_d_real = self.l_bce(self.Y_real, torch.ones_like(self.Y_real))
-      # self.err_d_fake = self.l_bce(self.Y_fake, torch.zeros_like(self.Y_fake))
-      # self.err_d_fake_e = self.l_bce(self.Y_fake_e, torch.zeros_like(self.Y_fake_e))
-      # self.err_d = self.err_d_real + \
-      #              self.err_d_fake + \
-      #              self.err_d_fake_e * self.opt.w_gamma
-      # # if self.err_d > 0.15:
-      # self.err_d.backward(retain_graph=True)
-      # BaseModel.loss_history["d"].append(self.err_d.item())
-      
-      # Wasserstein Discriminator Loss
-      self.err_d_real = -self.wasserstein_loss(self.Y_real, torch.ones_like(self.Y_real))
-      self.err_d_fake =  self.wasserstein_loss(self.Y_fake, torch.ones_like(self.Y_fake))
-      self.err_d_fake_e = self.wasserstein_loss(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
+        # ==========================
+        #   WGAN-Critic Loss (no BCE!)
+        # ==========================
 
-      self.err_d = self.err_d_real + self.err_d_fake + self.err_d_fake_e * self.opt.w_gamma
-      self.err_d.backward(retain_graph=True)
+        # Real and fake latent states
+        H_real = self.H                                  # from Encoder(Xc)
+        H_fake = self.H_hat.detach()                     # from Supervisor(Generator)
 
-      # ✅ Weight clipping for critic stability
-      for p in self.netd.parameters():
-          p.data.clamp_(-0.01, 0.01)
+        # Concatenate condition
+        H_real_c = torch.cat([H_real, self.C], dim=-1)
+        H_fake_c = torch.cat([H_fake, self.C], dim=-1)
 
-      BaseModel.loss_history["d"].append(self.err_d.item())
+        # Critic outputs
+        D_real = self.netd(H_real_c).mean()
+        D_fake = self.netd(H_fake_c).mean()
+
+        # Gradient Penalty
+        gp = self.grad_penalty(H_real, H_fake, self.C)
+
+        lambda_gp = 10.0
+        self.err_d = (D_fake - D_real) + lambda_gp * gp
+
+        self.err_d.backward(retain_graph=True)
+        BaseModel.loss_history["d"].append(self.err_d.item())
+
 
         
 
