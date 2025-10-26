@@ -454,7 +454,7 @@ class TimeGAN(BaseModel):
       #              torch.sqrt(self.err_s) 
       # === Directional Loss to avoid mode collapse ===
       # Use the first return feature index (close_return = position 0)
-      close_ret = self.X_hat[..., 0]  # synthetic returns from recovery
+      close_ret = self.X_hat[..., 0].detach() # synthetic returns from recovery
       signs = torch.sign(close_ret)
       sign_changes = torch.abs(signs[:, 1:] - signs[:, :-1]).float()
       sign_loss = torch.mean((sign_changes == 0).float())  # penalize no change in direction
@@ -570,7 +570,8 @@ class TimeGAN(BaseModel):
       # Add volatility noise to avoid collapse on constant vol
       noise_scale = 0.05
       if torch.rand(1) < 0.5:  # stochastic regularization
-          self.X_hat[..., 3:] += noise_scale * torch.randn_like(self.X_hat[..., 3:])
+          self.X_hat = self.X_hat + noise_scale * torch.randn_like(self.X_hat)
+
 
       # Backward-pass
       # nets
