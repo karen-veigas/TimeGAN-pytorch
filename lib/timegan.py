@@ -364,7 +364,7 @@ class TimeGAN(BaseModel):
         self.optimizer_r = optim.Adam(self.netr.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
         self.optimizer_g = optim.Adam(self.netg.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
         # self.optimizer_d = optim.Adam(self.netd.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
-        self.optimizer_d = optim.Adam(self.netd.parameters(),lr=self.opt.lr * 0.2, betas=(self.opt.beta1, 0.999))
+        self.optimizer_d = optim.Adam(self.netd.parameters(), lr=self.opt.lr * 0.5,betas=(self.opt.beta1, 0.999))
         self.optimizer_s = optim.Adam(self.nets.parameters(), lr=self.opt.lr, betas=(self.opt.beta1, 0.999))
 
     def wasserstein_loss(self, y_pred, y_true):
@@ -447,11 +447,29 @@ class TimeGAN(BaseModel):
       self.err_g_V1 = torch.mean(torch.abs(torch.sqrt(torch.std(self.X_hat,[0])[1] + 1e-6) - torch.sqrt(torch.std(self.X,[0])[1] + 1e-6)))   # |a^2 - b^2|
       self.err_g_V2 = torch.mean(torch.abs((torch.mean(self.X_hat,[0])[0]) - (torch.mean(self.X,[0])[0])))  # |a - b|
       self.err_s = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
-      self.err_g = self.err_g_U + \
-                   self.err_g_U_e * self.opt.w_gamma + \
-                   self.err_g_V1 * self.opt.w_g + \
-                   self.err_g_V2 * self.opt.w_g + \
-                   torch.sqrt(self.err_s) 
+      # self.err_g = self.err_g_U + \
+      #              self.err_g_U_e * self.opt.w_gamma + \
+      #              self.err_g_V1 * self.opt.w_g + \
+      #              self.err_g_V2 * self.opt.w_g + \
+      #              torch.sqrt(self.err_s) 
+      # === Directional Loss to avoid mode collapse ===
+      # Use the first return feature index (close_return = position 0)
+      close_ret = self.X_hat[..., 0]  # synthetic returns from recovery
+      signs = torch.sign(close_ret)
+      sign_changes = torch.abs(signs[:, 1:] - signs[:, :-1]).float()
+      sign_loss = torch.mean((sign_changes == 0).float())  # penalize no change in direction
+
+      lambda_dir = 10.0  # stronger gradient pressure
+
+      # === Updated Generator Loss ===
+      self.err_g = (
+          self.err_g_U  +
+          self.err_g_U_e * self.opt.w_gamma +
+          self.err_g_V1 * (self.opt.w_g * 0.5) +
+          self.err_g_V2 * (self.opt.w_g * 0.5) +
+          torch.sqrt(self.err_s) +
+          lambda_dir * sign_loss
+      )
       self.err_g.backward(retain_graph=True)
       BaseModel.loss_history["g"].append(self.err_g.item())
       print("Loss G: ", self.err_g)
@@ -548,6 +566,11 @@ class TimeGAN(BaseModel):
       self.forward_sg()
       self.forward_rg()
       self.forward_dg()
+      
+      # Add volatility noise to avoid collapse on constant vol
+      noise_scale = 0.05
+      if torch.rand(1) < 0.5:  # stochastic regularization
+          self.X_hat[..., 3:] += noise_scale * torch.randn_like(self.X_hat[..., 3:])
 
       # Backward-pass
       # nets
