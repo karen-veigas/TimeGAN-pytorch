@@ -434,45 +434,101 @@ class TimeGAN(BaseModel):
       BaseModel.loss_history["er"].append(self.err_er.item())
 
 
-    #  print("Loss: ", self.err_er_, self.err_s)
+    # #  print("Loss: ", self.err_er_, self.err_s)
+    # def backward_g(self):
+    #   """ Backpropagate through netG
+    #   """
+    #   # self.err_g_U = self.l_bce(self.Y_fake, torch.ones_like(self.Y_fake))
+
+    #   # self.err_g_U_e = self.l_bce(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
+    #   # Wasserstien Loss
+    #   self.err_g_U  = -torch.mean(self.Y_fake)
+    #   self.err_g_U_e = -torch.mean(self.Y_fake_e) 
+    #   self.err_g_V1 = torch.mean(torch.abs(torch.sqrt(torch.std(self.X_hat,[0])[1] + 1e-6) - torch.sqrt(torch.std(self.X,[0])[1] + 1e-6)))   # |a^2 - b^2|
+    #   self.err_g_V2 = torch.mean(torch.abs((torch.mean(self.X_hat,[0])[0]) - (torch.mean(self.X,[0])[0])))  # |a - b|
+    #   self.err_s = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
+    #   # self.err_g = self.err_g_U + \
+    #   #              self.err_g_U_e * self.opt.w_gamma + \
+    #   #              self.err_g_V1 * self.opt.w_g + \
+    #   #              self.err_g_V2 * self.opt.w_g + \
+    #   #              torch.sqrt(self.err_s) 
+    #   # === Directional Loss to avoid mode collapse ===
+    #   # Use the first return feature index (close_return = position 0)
+    #   close_ret = self.X_hat[..., 0].detach() # synthetic returns from recovery
+    #   signs = torch.sign(close_ret)
+    #   sign_changes = torch.abs(signs[:, 1:] - signs[:, :-1]).float()
+    #   sign_loss = torch.mean((sign_changes == 0).float())  # penalize no change in direction
+
+    #   lambda_dir = 10.0  # stronger gradient pressure
+
+    #   # === Updated Generator Loss ===
+    #   self.err_g = (
+    #       self.err_g_U  +
+    #       self.err_g_U_e * self.opt.w_gamma +
+    #       self.err_g_V1 * (self.opt.w_g * 0.5) +
+    #       self.err_g_V2 * (self.opt.w_g * 0.5) +
+    #       torch.sqrt(self.err_s) +
+    #       lambda_dir * sign_loss
+    #   )
+    #   self.err_g.backward(retain_graph=True)
+    #   BaseModel.loss_history["g"].append(self.err_g.item())
+    #   print("Loss G: ", self.err_g)
+
     def backward_g(self):
-      """ Backpropagate through netG
-      """
-      # self.err_g_U = self.l_bce(self.Y_fake, torch.ones_like(self.Y_fake))
+        """ Backpropagate through netG with return-focused objective. """
 
-      # self.err_g_U_e = self.l_bce(self.Y_fake_e, torch.ones_like(self.Y_fake_e))
-      # Wasserstien Loss
-      self.err_g_U  = -torch.mean(self.Y_fake)
-      self.err_g_U_e = -torch.mean(self.Y_fake_e) 
-      self.err_g_V1 = torch.mean(torch.abs(torch.sqrt(torch.std(self.X_hat,[0])[1] + 1e-6) - torch.sqrt(torch.std(self.X,[0])[1] + 1e-6)))   # |a^2 - b^2|
-      self.err_g_V2 = torch.mean(torch.abs((torch.mean(self.X_hat,[0])[0]) - (torch.mean(self.X,[0])[0])))  # |a - b|
-      self.err_s = self.l_mse(self.H_supervise[:,:-1,:], self.H[:,1:,:])
-      # self.err_g = self.err_g_U + \
-      #              self.err_g_U_e * self.opt.w_gamma + \
-      #              self.err_g_V1 * self.opt.w_g + \
-      #              self.err_g_V2 * self.opt.w_g + \
-      #              torch.sqrt(self.err_s) 
-      # === Directional Loss to avoid mode collapse ===
-      # Use the first return feature index (close_return = position 0)
-      close_ret = self.X_hat[..., 0].detach() # synthetic returns from recovery
-      signs = torch.sign(close_ret)
-      sign_changes = torch.abs(signs[:, 1:] - signs[:, :-1]).float()
-      sign_loss = torch.mean((sign_changes == 0).float())  # penalize no change in direction
+        # --- Adversarial pieces (as you had, WGAN style) ---
+        # self.Y_fake, self.Y_fake_e, self.H_supervise, self.X_hat are computed in optimize_params_g()
+        self.err_g_U   = -torch.mean(self.Y_fake)      # G vs D on H_hat
+        self.err_g_U_e = -torch.mean(self.Y_fake_e)    # G vs D on E_hat
 
-      lambda_dir = 10.0  # stronger gradient pressure
+        # Supervision loss on latent dynamics (keep this)
+        self.err_s = self.l_mse(self.H_supervise[:, :-1, :], self.H[:, 1:, :])
 
-      # === Updated Generator Loss ===
-      self.err_g = (
-          self.err_g_U  +
-          self.err_g_U_e * self.opt.w_gamma +
-          self.err_g_V1 * (self.opt.w_g * 0.5) +
-          self.err_g_V2 * (self.opt.w_g * 0.5) +
-          torch.sqrt(self.err_s) +
-          lambda_dir * sign_loss
-      )
-      self.err_g.backward(retain_graph=True)
-      BaseModel.loss_history["g"].append(self.err_g.item())
-      print("Loss G: ", self.err_g)
+        # ---------------------------------------------------
+        # 💡 Return-focused losses (weighted toward log_ret)
+        # FEATS_MODEL order (must match your preprocessing):
+        # ["close_return", "log_ret", "ema_diff", "high_low_diff", "rvol_24", "bb_width", "log_volume"]
+        close_ret = self.X_hat[..., 0]   # not used in loss, kept for future
+        log_ret   = self.X_hat[..., 1]   # <-- main signal we shape
+
+        # (1) Volatility floor on log returns (encourage variability)
+        #     aim for per-sequence std >= target_vol
+        target_vol = 0.02
+        vol_per_seq = torch.std(log_ret, dim=1)                 # (batch,)
+        loss_vol = torch.relu(target_vol - torch.mean(vol_per_seq))
+
+        # (2) Negative-return ratio target (ensure downside is present)
+        #     target ~ 40% negatives
+        target_neg = 0.40
+        neg_ratio = torch.mean((log_ret < 0).float())
+        loss_neg = torch.relu(target_neg - neg_ratio)
+
+        # (3) Drift penalty (keep average log return near 0)
+        loss_drift = torch.abs(torch.mean(log_ret))
+
+        # ---- Final generator loss (no mean/std matching against real!) ----
+        # Remove the old V1/V2 terms that anchored mean/std to real:
+        #   self.err_g_V1, self.err_g_V2  --> NOT USED anymore
+        lambda_adv   = 1.0    # adversarial
+        lambda_sup   = 5.0    # supervised temporal dynamics
+        lambda_vol   = 10.0   # enforce volatility
+        lambda_neg   = 10.0   # enforce negatives
+        lambda_drift = 5.0    # keep drift ~0
+
+        self.err_g = (
+            lambda_adv * (self.err_g_U + self.err_g_U_e * self.opt.w_gamma)
+            + lambda_sup * torch.sqrt(self.err_s + 1e-8)
+            + lambda_vol * loss_vol
+            + lambda_neg * loss_neg
+            + lambda_drift * loss_drift
+        )
+
+        self.err_g.backward(retain_graph=True)
+        BaseModel.loss_history["g"].append(self.err_g.item())
+
+        # Optional debug every ~100 iters (comment out if too chatty):
+        # print(f"[G] vol={vol_per_seq.mean().item():.4f} neg={neg_ratio.item():.2f} drift={torch.mean(log_ret).item():.4f}")
 
     def backward_s(self):
       """ Backpropagate through netS
